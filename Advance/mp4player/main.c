@@ -7,7 +7,7 @@ int main(int argc, char *argv[])
     GstStateChangeReturn ret;
     CustomData user_data;
     GstBus *bus;
-    gchar *uri = "../../mediafile/out.mp4";
+    gchar *uri = "../../out.mp4";
 
     if (argc > 1) {
         uri = "";

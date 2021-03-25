@@ -77,11 +77,11 @@ void call_back_state_changed (GstBus *bus, GstMessage *msg, CustomData *user_dat
 
 			if ( new_state == GST_STATE_PLAYING ) {
 				/* Read some properties */
-				g_object_get (user_data->pipeline, "n-video", &user_data->n_video, NULL);
+				/*g_object_get (user_data->pipeline, "n-video", &user_data->n_video, NULL);
 				g_object_get (user_data->pipeline, "n-audio", &user_data->n_audio, NULL);
 				g_object_get (user_data->pipeline, "n-text", &user_data->n_subtitle, NULL);
 
-				g_print ("%d video stream(s), %d audio stream(s), %d text stream(s)\n", user_data->n_video, user_data->n_audio, user_data->n_subtitle);
+				g_print ("%d video stream(s), %d audio stream(s), %d text stream(s)\n", user_data->n_video, user_data->n_audio, user_data->n_subtitle);*/
 
 			}
 		}
