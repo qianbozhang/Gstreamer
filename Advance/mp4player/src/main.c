@@ -7,7 +7,7 @@ int main(int argc, char *argv[])
     GstStateChangeReturn ret;
     CustomData user_data;
     GstBus *bus;
-    gchar *uri = "../../out.mp4";
+    gchar *uri = "/home/zhangqianbo/Desktop/GstreamerProject/Gstreamer/Advance/mp4player/out.mp4";
 
     if (argc > 1) {
         uri = "";

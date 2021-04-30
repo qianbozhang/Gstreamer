@@ -1,0 +1,1 @@
+/usr/bin/cc    CMakeFiles/mp4player.dir/main.c.o CMakeFiles/mp4player.dir/player_mp4.c.o  -o ../../output/mp4player  -lgstreamer-1.0 -lgobject-2.0 -lglib-2.0 

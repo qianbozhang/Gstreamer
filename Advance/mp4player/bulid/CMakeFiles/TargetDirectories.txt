@@ -1,0 +1,5 @@
+/home/zhangqianbo/Desktop/GstreamerProject/Gstreamer/Advance/mp4player/bulid/CMakeFiles/rebuild_cache.dir
+/home/zhangqianbo/Desktop/GstreamerProject/Gstreamer/Advance/mp4player/bulid/CMakeFiles/edit_cache.dir
+/home/zhangqianbo/Desktop/GstreamerProject/Gstreamer/Advance/mp4player/bulid/bin/CMakeFiles/rebuild_cache.dir
+/home/zhangqianbo/Desktop/GstreamerProject/Gstreamer/Advance/mp4player/bulid/bin/CMakeFiles/edit_cache.dir
+/home/zhangqianbo/Desktop/GstreamerProject/Gstreamer/Advance/mp4player/bulid/bin/CMakeFiles/mp4player.dir
