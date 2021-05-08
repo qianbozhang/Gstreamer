@@ -1,0 +1,1 @@
+/usr/bin/cc    CMakeFiles/oggplayer.dir/main.c.o CMakeFiles/oggplayer.dir/player.c.o  -o ../oggplayer  -lgstreamer-1.0 -lgobject-2.0 -lglib-2.0 

@@ -1,0 +1,5 @@
+/home/zhangqianbo/Desktop/GstreamerProject/Gstreamer/Advance/Oggplayer/bulid/CMakeFiles/rebuild_cache.dir
+/home/zhangqianbo/Desktop/GstreamerProject/Gstreamer/Advance/Oggplayer/bulid/CMakeFiles/edit_cache.dir
+/home/zhangqianbo/Desktop/GstreamerProject/Gstreamer/Advance/Oggplayer/bulid/bin/CMakeFiles/rebuild_cache.dir
+/home/zhangqianbo/Desktop/GstreamerProject/Gstreamer/Advance/Oggplayer/bulid/bin/CMakeFiles/edit_cache.dir
+/home/zhangqianbo/Desktop/GstreamerProject/Gstreamer/Advance/Oggplayer/bulid/bin/CMakeFiles/oggplayer.dir

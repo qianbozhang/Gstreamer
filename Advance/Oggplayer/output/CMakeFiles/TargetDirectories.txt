@@ -1,0 +1,5 @@
+/home/zhangqianbo/Desktop/GstreamerProject/Oggplayer/output/CMakeFiles/rebuild_cache.dir
+/home/zhangqianbo/Desktop/GstreamerProject/Oggplayer/output/CMakeFiles/edit_cache.dir
+/home/zhangqianbo/Desktop/GstreamerProject/Oggplayer/output/bin/CMakeFiles/rebuild_cache.dir
+/home/zhangqianbo/Desktop/GstreamerProject/Oggplayer/output/bin/CMakeFiles/edit_cache.dir
+/home/zhangqianbo/Desktop/GstreamerProject/Oggplayer/output/bin/CMakeFiles/oggplayer.dir
