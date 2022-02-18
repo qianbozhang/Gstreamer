@@ -20,6 +20,16 @@ void reset(Thumb_t* thumb)
     thumb->factories = NULL;
     thumb->decoder_factories = NULL;
     thumb->decodable_factories = NULL;
+
+    thumb->width = -1;
+    thumb->height = -1;
+
+    thumb->p_thread = NULL;
+
+    thumb->tState = STATE_IDLE;
+
+    thumb->isSeeked = FALSE;
+    thumb->isGot = FALSE;
 }
 
 /**
@@ -33,6 +43,7 @@ void state_changed (GstBus *bus, GstMessage *msg, Thumb_t* user_data)
     switch (GST_MESSAGE_TYPE (msg)) {
         case GST_MESSAGE_BUFFERING:
         {
+            LOG_PRINTF(ALWAYS, "buffering.");
             break;
         }
         case GST_MESSAGE_CLOCK_LOST:
@@ -45,8 +56,9 @@ void state_changed (GstBus *bus, GstMessage *msg, Thumb_t* user_data)
         }  
         case GST_MESSAGE_STATE_CHANGED:
         {
-            /* We are only interested in state-changed messages from the pipeline */
-            if (GST_MESSAGE_SRC (msg) == GST_OBJECT (user_data->pipeline)) {
+            GstObject *src = GST_MESSAGE_SRC(msg);
+            if(GST_IS_PIPELINE(src))
+            {
                 GstState old_state, new_state, pending_state;
                 gst_message_parse_state_changed (msg, &old_state, &new_state, &pending_state);
                 LOG_PRINTF(ALWAYS, "Pipeline state changed from %s to %s pending:%s.", 
@@ -54,9 +66,13 @@ void state_changed (GstBus *bus, GstMessage *msg, Thumb_t* user_data)
                     gst_element_state_get_name (new_state),
                     gst_element_state_get_name (pending_state));
 
-                if(new_state == GST_STATE_PLAYING)
+                if( old_state == GST_STATE_PAUSED &&
+                    new_state == GST_STATE_PAUSED &&
+                    pending_state == GST_STATE_VOID_PENDING &&
+                    user_data->tState == STATE_PREPARING)
                 {
-                    gst_debug_bin_to_dot_file_with_ts(GST_BIN (user_data->pipeline),GST_DEBUG_GRAPH_SHOW_ALL,"playing");
+                    LOG_PRINTF(ALWAYS, "praparing ==>> prepared.");
+                    user_data->tState = STATE_PREPARED;
                 }
             }
             break;
@@ -381,11 +397,11 @@ void pad_added(GstElement *obj, GstPad *newpad, Thumb_t* user_data)
 
     //create rgba convert
     GstCaps *filter_rgba_caps = NULL;
-    filter_rgba_caps = gst_caps_new_simple ("video/x-raw","format", G_TYPE_STRING, "YV12", NULL);
+    filter_rgba_caps = gst_caps_new_simple ("video/x-raw","format", G_TYPE_STRING, "RGBA", NULL);
 
     //create videosink
-    LOG_PRINTF(ALWAYS, "prepare to create autovideosink.");
-    GstElement *sinkplug = gst_element_factory_make("autovideosink", "video_show");
+    LOG_PRINTF(ALWAYS, "prepare to create filesink.");
+    GstElement *sinkplug = gst_element_factory_make("filesink", "video_show");
     if (!gst_bin_add ((GstBin *) user_data->pipeline, sinkplug)) {
         LOG_PRINTF(ERROR, "could not add sink to pipeline.");
         return;
@@ -395,6 +411,14 @@ void pad_added(GstElement *obj, GstPad *newpad, Thumb_t* user_data)
         LOG_PRINTF(ERROR, "could not link convert ==>> RGBA ==>> sink.");
         return;
     }
+
+    //set location
+    g_object_set(G_OBJECT(sinkplug), "location", "dump.rgba", NULL);
+
+    //add prob
+    GstPad* sinkplug_sinkpad = gst_element_get_static_pad (sinkplug, "sink");
+    gst_pad_add_probe (sinkplug_sinkpad, GST_PAD_PROBE_TYPE_BUFFER, (GstPadProbeCallback) cb_have_data, user_data, NULL);
+    gst_object_unref (sinkplug_sinkpad);
     //change state
     gst_element_sync_state_with_parent(sinkplug);
 }
@@ -475,4 +499,85 @@ void update_factories_list(Thumb_t* thumb)
         g_list_length(thumb->factories),
         g_list_length(thumb->decoder_factories),
         g_list_length(thumb->decodable_factories));
+}
+
+
+/**
+ * @brief: thumbnail player thread
+ * @param[in] user_data: means Thumb_t
+ */
+void THUMBNAIL_PLAYER_THREAD(void* handle)
+{
+    Thumb_t* thumb = (Thumb_t*)handle;
+    LOG_PRINTF(ALWAYS, " start loop.");
+
+    thumb->loop = g_main_loop_new(NULL, FALSE);
+    //watch bus
+    GstBus *bus = gst_element_get_bus (thumb->pipeline);
+    gst_bus_add_signal_watch (bus);
+    g_signal_connect (G_OBJECT(bus), "message::error", G_CALLBACK (event_notify), thumb);
+    g_signal_connect (G_OBJECT(bus), "message::eos", G_CALLBACK (event_notify), thumb);
+    g_signal_connect (G_OBJECT(bus), "message::state-changed", G_CALLBACK (state_changed), thumb);
+
+    //start task
+    /*GMainLoop run*/
+    LOG_PRINTF(INFO, "set mainloop run\n");
+    g_main_loop_run(thumb->loop);
+
+    //Free
+    gst_object_unref (bus);
+    g_main_loop_unref(thumb->loop);
+    LOG_PRINTF(ALWAYS, "end loop");
+}
+
+
+/**
+ * @brief: prob the sink buffer data
+ * @param[in] pad: the prob pad
+ * @param[in] info: buffer data
+ * @param[in] user_data: user data
+ * 
+ * @return: --
+ */
+GstPadProbeReturn cb_have_data ( GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
+{
+    Thumb_t* handle = (Thumb_t*) user_data;
+    LOG_PRINTF(ALWAYS, "rev prob info, seeked:%d.", handle->isSeeked);
+    if(handle->isSeeked != TRUE)
+    {
+        return GST_PAD_PROBE_OK;
+    }
+
+    //save buffer
+    GstCaps *caps = gst_pad_get_current_caps (pad);
+    LOG_PRINTF(ALWAYS, "caps:%s.", gst_caps_to_string(caps));
+    GstStructure *ins = gst_caps_get_structure (caps, 0);
+    gint w, h;
+    gst_structure_get_int(ins, "width", &w);
+    gst_structure_get_int(ins, "height", &h);
+    LOG_PRINTF(ALWAYS, "width:%d, height:%d.", w, h);
+
+    GstBuffer *buffer = GST_PAD_PROBE_INFO_BUFFER (info);
+    if(buffer == NULL)
+    {
+        LOG_PRINTF(ERROR, "buffer is null.");
+        return GST_PAD_PROBE_OK;
+    }
+    GstMapInfo map;
+    if ( gst_buffer_map (buffer, &map, GST_MAP_READ) ) {
+        //save buffer
+        char header[512];
+        sprintf(header, "%dx%d.rgba", w, h);
+
+        FILE *fp = fopen(header, "wb+");
+        fwrite(map.data, 1, map.size, fp);
+        fclose(fp);
+
+        gst_buffer_unmap (buffer, &map);
+    }
+
+    handle->isGot = TRUE;
+
+
+    return GST_PAD_PROBE_OK;
 }
