@@ -57,6 +57,14 @@ void type_found(GstElement* typefind, guint probability, GstCaps* caps, Thumb_t*
 void pad_added(GstElement *obj, GstPad *newpad, Thumb_t* user_data);
 
 /**
+ * @brief: handle urisourcebin pad-added signal
+ * @param[in] typefind: the sourcebin instance
+ * @param[in] newpad: the pad that has been added
+ * @param[in] user_data: means Thumb_t
+ */
+void sourcebin_pad_added(GstElement *obj, GstPad *newpad, Thumb_t* user_data);
+
+/**
  * @brief: update plugin factories
  * @param[in] user_data: means Thumb_t
  */

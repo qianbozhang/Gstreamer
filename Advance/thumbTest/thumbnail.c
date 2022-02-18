@@ -1,4 +1,8 @@
 #include "thumbnail.h"
+#include "log.h"
+
+#undef CLASSNAME
+#define CLASSNAME "THUMBNAIL"
 
 /**
  * @brief: init thumb param
@@ -34,7 +38,7 @@ void state_changed (GstBus *bus, GstMessage *msg, Thumb_t* user_data)
         case GST_MESSAGE_CLOCK_LOST:
         {
             /* Get a new clock */
-            g_print ("Rev GST_MESSAGE_CLOCK_LOST\n");
+            LOG_PRINTF(ALWAYS, "Rev GST_MESSAGE_CLOCK_LOST");
             gst_element_set_state (user_data->pipeline, GST_STATE_PAUSED);
             gst_element_set_state (user_data->pipeline, GST_STATE_PLAYING);
             break;
@@ -45,10 +49,15 @@ void state_changed (GstBus *bus, GstMessage *msg, Thumb_t* user_data)
             if (GST_MESSAGE_SRC (msg) == GST_OBJECT (user_data->pipeline)) {
                 GstState old_state, new_state, pending_state;
                 gst_message_parse_state_changed (msg, &old_state, &new_state, &pending_state);
-                g_print ("Pipeline state changed from %s to %s pending:%s:\n", 
+                LOG_PRINTF(ALWAYS, "Pipeline state changed from %s to %s pending:%s.", 
                     gst_element_state_get_name (old_state),
                     gst_element_state_get_name (new_state),
                     gst_element_state_get_name (pending_state));
+
+                if(new_state == GST_STATE_PLAYING)
+                {
+                    gst_debug_bin_to_dot_file_with_ts(GST_BIN (user_data->pipeline),GST_DEBUG_GRAPH_SHOW_ALL,"playing");
+                }
             }
             break;
         }
@@ -72,7 +81,7 @@ void event_notify (GstBus *bus, GstMessage *msg, Thumb_t* user_data)
         case GST_MESSAGE_EOS:
         {
             /* end-of-stream */
-            g_print ("Rev Eos-of-stream.\n");
+            LOG_PRINTF(ALWAYS, "Rev Eos-of-stream.");
             gst_element_set_state (user_data->pipeline, GST_STATE_READY);
             g_main_loop_quit (user_data->loop);
             break;
@@ -82,7 +91,7 @@ void event_notify (GstBus *bus, GstMessage *msg, Thumb_t* user_data)
             gchar *debug;
 
             gst_message_parse_error (msg, &err, &debug);
-            g_print ("Rev Error: %s\n", err->message);
+            LOG_PRINTF(ALWAYS, "Rev Error: %s.", err->message);
             g_error_free (err);
             g_free (debug);
 
@@ -107,14 +116,14 @@ void event_notify (GstBus *bus, GstMessage *msg, Thumb_t* user_data)
  */
 void type_found(GstElement* typefind, guint probability, GstCaps* caps, Thumb_t* user_data)
 {
-    g_print("rev probability:%u, caps: %s.\n", probability, gst_caps_to_string (caps));
+    LOG_PRINTF(ALWAYS, "rev probability:%u, caps: %s.", probability, gst_caps_to_string (caps));
     GValueArray *factories = NULL;
     GList *list, *tmp;
     GstPad* srcpad;
     //start analyze srcpad & caps
     if(!gst_caps_is_fixed(caps))
     {
-        g_print("caps is not fixed.\n");
+        LOG_PRINTF(ERROR, "caps is not fixed.");
         return;
     }
     //find factories
@@ -137,11 +146,11 @@ void type_found(GstElement* typefind, guint probability, GstCaps* caps, Thumb_t*
     if(factories->n_values == 0)
     {
         g_value_array_free (factories);
-        g_print("cannot find demux.\n");
+        LOG_PRINTF(ERROR,"cannot find demux.");
         return;
     }else
     {
-        g_print("element factories n_values = %d.\n", factories->n_values);
+        LOG_PRINTF(ERROR,"element factories n_values = %d.", factories->n_values);
     }
 
     //try to create an element and link it 
@@ -155,7 +164,7 @@ void type_found(GstElement* typefind, guint probability, GstCaps* caps, Thumb_t*
         factory = g_value_get_object (g_value_array_get_nth (factories, 0));
         /* Remove selected factory from the list. */
         g_value_array_remove (factories, 0);
-        g_print("trying factory %p.\n", factory);
+        LOG_PRINTF(INFO, "trying factory %p.", factory);
         //condition 1: caps is subset of the factory sink pad caps ?
         if (gst_caps_is_fixed (caps)) {
             const GList *templs;
@@ -167,7 +176,7 @@ void type_found(GstElement* typefind, guint probability, GstCaps* caps, Thumb_t*
                 if (templ->direction == GST_PAD_SINK) {
                     GstCaps *templcaps = gst_static_caps_get (&templ->static_caps);
                     if (!gst_caps_is_subset (caps, templcaps)) {
-                        g_print ("caps %" GST_PTR_FORMAT " not subset of %" GST_PTR_FORMAT "\n", caps, templcaps);
+                        LOG_PRINTF(ERROR, "caps %s not subset of %s.", gst_caps_to_string(caps), gst_caps_to_string(templcaps));
                         gst_caps_unref (templcaps);
                         skip = TRUE;
                         break;
@@ -183,15 +192,15 @@ void type_found(GstElement* typefind, guint probability, GstCaps* caps, Thumb_t*
         //condition 2: is a demuxer factory ?
 
         //create element
-        g_print("prepare to create demuxer.\n");
+        LOG_PRINTF(INFO, "prepare to create demuxer.");
         if ((element = gst_element_factory_create (factory, NULL)) == NULL) {
-            g_print ("Could not create an element from %s", gst_plugin_feature_get_name (GST_PLUGIN_FEATURE (factory)));
+            LOG_PRINTF(ERROR, "Could not create an element from %s", gst_plugin_feature_get_name (GST_PLUGIN_FEATURE (factory)));
             continue;
         }
 
         //add element to bin
         if (!(gst_bin_add (GST_BIN_CAST (user_data->pipeline), element))) {
-            g_print ("Couldn't add %s to the bin", GST_ELEMENT_NAME (element));
+            LOG_PRINTF(ERROR, "Couldn't add %s to the bin", GST_ELEMENT_NAME (element));
             gst_object_unref (element);
             continue;
         }
@@ -200,7 +209,7 @@ void type_found(GstElement* typefind, guint probability, GstCaps* caps, Thumb_t*
         if (element->sinkpads != NULL)
             sinkpad = gst_object_ref (element->sinkpads->data);
         if (sinkpad == NULL) {
-            g_print ( "Element %s doesn't have a sink pad", GST_ELEMENT_NAME (element));
+            LOG_PRINTF(ERROR, "Element %s doesn't have a sink pad", GST_ELEMENT_NAME (element));
             gst_bin_remove (GST_BIN (user_data->pipeline), element);
             continue;
         }
@@ -208,12 +217,12 @@ void type_found(GstElement* typefind, guint probability, GstCaps* caps, Thumb_t*
         //try link
         srcpad = gst_element_get_static_pad(typefind, "src");
         if ((gst_pad_link_full (srcpad, sinkpad, GST_PAD_LINK_CHECK_NOTHING)) != GST_PAD_LINK_OK) {
-            g_print ("Link failed on pad %s:%s", GST_DEBUG_PAD_NAME (sinkpad));
+            LOG_PRINTF(ERROR, "Link failed on pad %s:%s", GST_DEBUG_PAD_NAME (sinkpad));
             gst_object_unref (sinkpad);
             gst_bin_remove (GST_BIN (user_data->pipeline), element);
             continue;
         }
-        g_print("link success .\n");
+        LOG_PRINTF(INFO, "link success .");
 
         //active it to ready
         if ((gst_element_set_state (element, GST_STATE_READY)) == GST_STATE_CHANGE_FAILURE) {
@@ -221,12 +230,12 @@ void type_found(GstElement* typefind, guint probability, GstCaps* caps, Thumb_t*
             gst_bin_remove (GST_BIN (user_data->pipeline), element);
             continue;
         }
-        g_print("NULL ==>> READY .\n");
+        LOG_PRINTF(INFO, "NULL ==>> READY .");
 
         /* check if we still accept the caps on the pad after setting
         * the element to READY */
         if (!gst_pad_query_accept_caps (sinkpad, caps)) {
-            g_print ("Element %s does not accept caps", GST_ELEMENT_NAME (element));
+            LOG_PRINTF(ERROR, "Element %s does not accept caps", GST_ELEMENT_NAME (element));
             gst_element_set_state (element, GST_STATE_NULL);
             gst_object_unref (sinkpad);
             gst_bin_remove (GST_BIN (user_data->pipeline), element);
@@ -234,7 +243,7 @@ void type_found(GstElement* typefind, guint probability, GstCaps* caps, Thumb_t*
         }
 
         gst_object_unref (sinkpad);
-        g_print ("linked on pad %s:%s. \n", GST_DEBUG_PAD_NAME (srcpad));
+        LOG_PRINTF(ALWAYS, "linked on pad %s:%s.", GST_DEBUG_PAD_NAME (srcpad));
 
         //link the element further
         g_signal_connect (element, "pad-added", G_CALLBACK (pad_added), user_data);
@@ -245,7 +254,7 @@ void type_found(GstElement* typefind, guint probability, GstCaps* caps, Thumb_t*
             gst_bin_remove (GST_BIN (user_data->pipeline), element);
             continue;
         }
-        g_print("READY ==>> PAUSED .\n");
+        LOG_PRINTF(INFO, "READY ==>> PAUSED .");
         break;
     }
     g_value_array_free (factories);
@@ -270,11 +279,11 @@ void pad_added(GstElement *obj, GstPad *newpad, Thumb_t* user_data)
     }
 
     g_object_get(newpad, "name", &new_pad_caps_name, NULL);
-    g_print("Rev demuxer pad(%s) :%s.\n", new_pad_caps_name, gst_caps_to_string(caps));
+    LOG_PRINTF(ALWAYS, "Rev demuxer pad(%s) :%s.", new_pad_caps_name, gst_caps_to_string(caps));
 
     if (!g_str_has_prefix(new_pad_caps_name, "video"))
     {
-        g_print(" not video pad ,skip.\n");
+        LOG_PRINTF(ERROR, " not video pad ,skip.\n");
         return;
     }
 
@@ -286,19 +295,19 @@ void pad_added(GstElement *obj, GstPad *newpad, Thumb_t* user_data)
 
     if(factories)
     {
-        g_print("prepare to create decode element.\n");
+        LOG_PRINTF(ALWAYS, "prepare to create decode element.");
         element = gst_element_factory_create ((GstElementFactory *) factories->data, NULL);
-        g_print ("Created element '%s' \n", GST_ELEMENT_NAME (element));
+        LOG_PRINTF(ALWAYS, "Created element '%s'.", GST_ELEMENT_NAME (element));
         gst_plugin_feature_list_free (factories);
     }else
     {
-        g_print(" factories is null.\n");
+        LOG_PRINTF(ERROR, "factories is null.");
         return;
     }
 
     //add to bin
     if (!gst_bin_add ((GstBin *) user_data->pipeline, element)) {
-        g_print ("could not add decoder to pipeline");
+        LOG_PRINTF(ERROR, "could not add decoder to pipeline.");
         return;
     }
 
@@ -307,47 +316,119 @@ void pad_added(GstElement *obj, GstPad *newpad, Thumb_t* user_data)
 
     //try to link
     if (gst_pad_link_full (newpad, sinkpad, GST_PAD_LINK_CHECK_NOTHING) != GST_PAD_LINK_OK) {
-        g_print ("could not link to %s:%s",  GST_DEBUG_PAD_NAME (sinkpad));
+        LOG_PRINTF(ERROR, "could not link to %s:%s",  GST_DEBUG_PAD_NAME (sinkpad));
         return;
     }
     //change state
     gst_element_sync_state_with_parent(element);
-    // DOT_DUMP(user_data->pipeline);
 
-    //create videoconvert
-    g_print("prepare to create videoconvert.\n");
-    GstElement *convert = gst_element_factory_make("videoconvert", "convert");
+    //create videoscale
+    LOG_PRINTF(ALWAYS, "prepare to create videoscale.");
+    GstElement *scale = gst_element_factory_make("videoscale", "scale");
+    GstCaps* newpad_caps = gst_pad_get_current_caps (newpad);
+    LOG_PRINTF(ALWAYS, "video stream src caps:%s.", gst_caps_to_string(newpad_caps));
+    GstStructure *ins = gst_caps_get_structure (newpad_caps, 0);
+    const GValue *par = gst_structure_get_value (ins, "pixel-aspect-ratio");
+    GstCaps *filter_caps = NULL;
+    if(par)
+    {
+        gint par_n, par_d;
+        par_n = gst_value_get_fraction_numerator (par);
+        par_d = gst_value_get_fraction_denominator (par);
+        LOG_PRINTF(ALWAYS, "par_n:%d, par_d:%d.", par_n, par_d);
+        
+        filter_caps = gst_caps_new_simple ("video/x-raw",
+            "width", G_TYPE_INT, 480,
+            "height", G_TYPE_INT, 360,
+            "pixel-aspect-ratio", GST_TYPE_FRACTION, par_n, par_d,
+            NULL);
+    }else
+    {
+        filter_caps = gst_caps_new_simple ("video/x-raw",
+            "width", G_TYPE_INT, 480,
+            "height", G_TYPE_INT, 360,
+            NULL);
+    }
 
-    GstPad* convert_sink = gst_element_get_static_pad (convert, "sink");
-    GstPad* convert_src = gst_element_get_static_pad (convert, "src");
-    if (!gst_bin_add ((GstBin *) user_data->pipeline, convert)) {
-        g_print ("could not add convert to pipeline \n");
+    GstPad* scale_sink = gst_element_get_static_pad (scale, "sink");
+    GstPad* scale_src = gst_element_get_static_pad (scale, "src");
+    if (!gst_bin_add ((GstBin *) user_data->pipeline, scale)) {
+        LOG_PRINTF(ERROR, "could not add scale to pipeline.");
         return;
     }
 
-    if (gst_pad_link_full (srcpad, convert_sink, GST_PAD_LINK_CHECK_NOTHING) != GST_PAD_LINK_OK) {
-        g_print ("could not link to %s:%s \n",  GST_DEBUG_PAD_NAME (convert_sink));
+    if (gst_pad_link_full (srcpad, scale_sink, GST_PAD_LINK_CHECK_NOTHING) != GST_PAD_LINK_OK) {
+        LOG_PRINTF(ERROR, "could not link to %s:%s.",  GST_DEBUG_PAD_NAME (scale_sink));
+        return;
+    }
+    //change state
+    gst_element_sync_state_with_parent(scale);
+
+    //create videoconvert
+    LOG_PRINTF(ALWAYS, "prepare to create videoconvert.");
+    GstElement *convert = gst_element_factory_make("videoconvert", "convert");
+    if (!gst_bin_add ((GstBin *) user_data->pipeline, convert)) {
+        LOG_PRINTF(ERROR, "could not add convert to pipeline.");
+        return;
+    }
+
+    if (gst_element_link_filtered (scale, convert, filter_caps) != TRUE) {
+        LOG_PRINTF(ERROR, "could not link scale ==>> capsfilter ==>> convert.");
         return;
     }
     //change state
     gst_element_sync_state_with_parent(convert);
 
-    //create videosink
-    g_print("prepare to create autovideosink.\n");
-    GstElement *sinkplug = gst_element_factory_make("autovideosink", "video_show");
+    //create rgba convert
+    GstCaps *filter_rgba_caps = NULL;
+    filter_rgba_caps = gst_caps_new_simple ("video/x-raw","format", G_TYPE_STRING, "YV12", NULL);
 
-    GstPad* videosink_sink = gst_element_get_static_pad (sinkplug, "sink");
+    //create videosink
+    LOG_PRINTF(ALWAYS, "prepare to create autovideosink.");
+    GstElement *sinkplug = gst_element_factory_make("autovideosink", "video_show");
     if (!gst_bin_add ((GstBin *) user_data->pipeline, sinkplug)) {
-        g_print ("could not add sink to pipeline \n");
+        LOG_PRINTF(ERROR, "could not add sink to pipeline.");
         return;
     }
 
-    if (gst_pad_link_full (convert_src, videosink_sink, GST_PAD_LINK_CHECK_NOTHING) != GST_PAD_LINK_OK) {
-        g_print ("could not link to %s:%s \n",  GST_DEBUG_PAD_NAME (videosink_sink));
+    if (gst_element_link_filtered (convert, sinkplug, filter_rgba_caps) != TRUE) {
+        LOG_PRINTF(ERROR, "could not link convert ==>> RGBA ==>> sink.");
         return;
     }
     //change state
     gst_element_sync_state_with_parent(sinkplug);
+}
+
+/**
+ * @brief: handle urisourcebin pad-added signal
+ * @param[in] typefind: the sourcebin instance
+ * @param[in] newpad: the pad that has been added
+ * @param[in] user_data: means Thumb_t
+ */
+void sourcebin_pad_added(GstElement *obj, GstPad *newpad, Thumb_t* user_data)
+{
+    LOG_PRINTF(ALWAYS, "Received new pad '%s' from '%s'.", GST_PAD_NAME (newpad), GST_ELEMENT_NAME (obj));
+    GstCaps *newpad_caps = gst_pad_get_current_caps (newpad);
+    LOG_PRINTF(ALWAYS, "caps:%s.", gst_caps_to_string(newpad_caps));
+    if(newpad_caps)
+    {
+        gst_caps_unref (newpad_caps);
+    }
+    GstPad *sink_pad = gst_element_get_static_pad (user_data->typefind, "sink");
+    if (gst_pad_is_linked (sink_pad)) {
+        LOG_PRINTF(ERROR, "We are already linked. Ignoring.");
+        gst_object_unref (sink_pad);
+        return;
+    }
+
+    /* Attempt the link */
+    GstPadLinkReturn ret = gst_pad_link (newpad, sink_pad);
+    if (GST_PAD_LINK_FAILED (ret)) {
+        LOG_PRINTF(ERROR, "Link failed.");
+    } else {
+        LOG_PRINTF(ALWAYS, "Link succeeded.");
+    }
+    gst_object_unref (sink_pad);
 }
 
 /**
@@ -388,4 +469,10 @@ void update_factories_list(Thumb_t* thumb)
                 thumb->decodable_factories = g_list_append (thumb->decodable_factories, fact);
         }
     }
+    //print
+    LOG_PRINTF(ALWAYS, "cookie:%u, factories:%d, decoder_factories:%d, decodable_factories:%d.\n", 
+        thumb->cookie,
+        g_list_length(thumb->factories),
+        g_list_length(thumb->decoder_factories),
+        g_list_length(thumb->decodable_factories));
 }
