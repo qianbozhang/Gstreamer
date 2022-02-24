@@ -19,6 +19,7 @@ typedef struct _thumbnail
     GstElement *pipeline;       /* player pipeline */
 	GstElement *source;         /* file source */
 	GstElement *typefind;       /* typefind */
+	GstElement *appsink;        /* appsink */
 
     GMainLoop  *loop;           /* main loop */
 
@@ -106,6 +107,15 @@ void THUMBNAIL_PLAYER_THREAD(void* handle);
  * @return: --
  */
 GstPadProbeReturn cb_have_data ( GstPad * pad, GstPadProbeInfo * info, gpointer user_data);
+
+/**
+ * @brief: appsink new-sample signal
+ * @param[in] object: element obj
+ * @param[in] user_data: user data
+ * 
+ * @return: --
+ */
+GstFlowReturn new_sample (GstElement* object, gpointer user_data);
 
 
 #endif

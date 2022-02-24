@@ -41,7 +41,7 @@ int main(int argc, char *argv[])
 
     Thumb_t thumb;
     
-    gchar *uri = "file:///home/zhangqianbo/Desktop/Gstreamer/out.mp4"; //default
+    gchar *uri = "file:///home/zhangqianbo/Desktop/Gstreamer/01Stay With Me.mp4"; //default
     if (argc > 1) {
         if (gst_uri_is_valid (argv[1])) {
             uri = g_strdup (argv[1]);
@@ -57,12 +57,12 @@ int main(int argc, char *argv[])
         LOG_PRINTF(INFO, "wait prepared state!!!");
     }
 
-    Thumb_GetFrameAtPos(2 * 1000, &thumb);
+    Thumb_GetFrameAtPos(5 * 1000, &thumb);
 
-    while(thumb.isGot != TRUE)
-    {
-        LOG_PRINTF(INFO, "wait buffer!!!");
-    }
+    // while(thumb.isGot != TRUE)
+    // {
+    //     LOG_PRINTF(INFO, "wait buffer!!!");
+    // }
     
     Thumb_Deinit(&thumb);
 
@@ -124,6 +124,7 @@ int Thumb_InitAsync(gchar *uri, int width, int height, Thumb_t* handle)
  */  
 int Thumb_GetFrameAtPos(int pos, Thumb_t* handle)
 {
+    LOG_PRINTF(ALWAYS, "seek to %d ms", pos);
     //prepare to seek
     GstEvent *seek = gst_event_new_seek(1.0, GST_FORMAT_TIME, GST_SEEK_FLAG_FLUSH,
         GST_SEEK_TYPE_SET, pos * GST_MSECOND,
@@ -137,6 +138,54 @@ int Thumb_GetFrameAtPos(int pos, Thumb_t* handle)
     LOG_PRINTF(ALWAYS, "seek to %d ms success.", pos);
     handle->isSeeked = TRUE;
 
+    GstSample *sample;
+    // g_signal_emit_by_name (handle->appsink, "try-pull-preroll", 10000000, &sample);
+    g_signal_emit_by_name (handle->appsink, "pull-preroll", &sample, NULL);
+    if (sample) {
+        GstBuffer *buffer;
+        GstMapInfo map;
+        GstCaps *caps;
+        GstStructure *s;
+        gint width, height;
+ 
+        caps = gst_sample_get_caps (sample);
+        if (!caps) {
+            g_print ("could not get snapshot format\n");
+            LOG_PRINTF(ERROR, "cannot get caps!!");
+            return -1;
+        }
+        s = gst_caps_get_structure (caps, 0);
+ 
+        /* we need to get the final caps on the buffer to get the size */
+        gboolean res;
+        res = gst_structure_get_int (s, "width", &width);
+        res |= gst_structure_get_int (s, "height", &height);
+        if (!res) {
+            LOG_PRINTF(ERROR, "could not get snapshot dimension");
+            return -1;
+        }
+        LOG_PRINTF(ALWAYS, "dimension:%d x %d.", width, height);
+ 
+        buffer = gst_sample_get_buffer (sample);
+    
+        /* Mapping a buffer can fail (non-readable) */
+        if (gst_buffer_map (buffer, &map, GST_MAP_READ)) {
+            /* print the buffer data for debug */
+            //save buffer
+            char header[512];
+            sprintf(header, "%dx%d.rgba", width, height);
+
+            FILE *fp = fopen(header, "wb+");
+            fwrite(map.data, 1, map.size, fp);
+            fclose(fp);
+
+            gst_buffer_unmap (buffer, &map);
+        }
+        gst_sample_unref (sample);
+    } else {
+        LOG_PRINTF(ERROR, "sample is null");
+    }
+
     return 0;
 }
 
@@ -148,14 +197,18 @@ int Thumb_GetFrameAtPos(int pos, Thumb_t* handle)
  */  
 int Thumb_Deinit(Thumb_t* handle)
 {
-    if(handle->loop)
-    {
-        g_main_loop_quit (handle->loop);
-        g_main_loop_unref(handle->loop);
-    }
-
     //set NULL
     gst_element_set_state (handle->pipeline, GST_STATE_NULL);
+    //quit main loop
+    if(handle->loop)
+    {
+        LOG_PRINTF(ERROR, "quit loop");
+        g_main_loop_quit (handle->loop);
+        // g_main_loop_unref(handle->loop);
+        // handle->loop = NULL;
+    }
+
+    //unref pipeline
     if(handle->pipeline)
         gst_object_unref (handle->pipeline);
     

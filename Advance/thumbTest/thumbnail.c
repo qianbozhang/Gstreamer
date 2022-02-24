@@ -14,6 +14,7 @@ void reset(Thumb_t* thumb)
     thumb->pipeline = NULL;
     thumb->source = NULL;
     thumb->typefind = NULL;
+    thumb->appsink = NULL;
     thumb->loop = NULL;
 
     thumb->cookie = 0;
@@ -180,7 +181,7 @@ void type_found(GstElement* typefind, guint probability, GstCaps* caps, Thumb_t*
         factory = g_value_get_object (g_value_array_get_nth (factories, 0));
         /* Remove selected factory from the list. */
         g_value_array_remove (factories, 0);
-        LOG_PRINTF(INFO, "trying factory %p.", factory);
+        LOG_PRINTF(INFO, "trying factory %p\aA.", factory);
         //condition 1: caps is subset of the factory sink pad caps ?
         if (gst_caps_is_fixed (caps)) {
             const GList *templs;
@@ -271,6 +272,7 @@ void type_found(GstElement* typefind, guint probability, GstCaps* caps, Thumb_t*
             continue;
         }
         LOG_PRINTF(INFO, "READY ==>> PAUSED .");
+        LOG_PRINTF(ALWAYS, "create demux(%s) success!!!", GST_ELEMENT_NAME(element));
         break;
     }
     g_value_array_free (factories);
@@ -294,7 +296,10 @@ void pad_added(GstElement *obj, GstPad *newpad, Thumb_t* user_data)
         caps = gst_pad_query_caps (newpad, NULL);
     }
 
-    g_object_get(newpad, "name", &new_pad_caps_name, NULL);
+    GstStructure *cstr = gst_caps_get_structure (caps, 0);
+    new_pad_caps_name = gst_structure_get_name (cstr);
+
+    // g_object_get(newpad, "name", &new_pad_caps_name, NULL);
     LOG_PRINTF(ALWAYS, "Rev demuxer pad(%s) :%s.", new_pad_caps_name, gst_caps_to_string(caps));
 
     if (!g_str_has_prefix(new_pad_caps_name, "video"))
@@ -311,7 +316,9 @@ void pad_added(GstElement *obj, GstPad *newpad, Thumb_t* user_data)
 
     if(factories)
     {
-        LOG_PRINTF(ALWAYS, "prepare to create decode element.");
+        gchar *longname = gst_element_factory_get_metadata ((GstElementFactory *) factories->data, GST_ELEMENT_METADATA_LONGNAME);
+        LOG_PRINTF(ALWAYS, "prepare to create decode[%s] element, factories:%d.", longname, g_list_length(factories));
+        g_free(longname);
         element = gst_element_factory_create ((GstElementFactory *) factories->data, NULL);
         LOG_PRINTF(ALWAYS, "Created element '%s'.", GST_ELEMENT_NAME (element));
         gst_plugin_feature_list_free (factories);
@@ -400,27 +407,27 @@ void pad_added(GstElement *obj, GstPad *newpad, Thumb_t* user_data)
     filter_rgba_caps = gst_caps_new_simple ("video/x-raw","format", G_TYPE_STRING, "RGBA", NULL);
 
     //create videosink
-    LOG_PRINTF(ALWAYS, "prepare to create filesink.");
-    GstElement *sinkplug = gst_element_factory_make("filesink", "video_show");
-    if (!gst_bin_add ((GstBin *) user_data->pipeline, sinkplug)) {
+    LOG_PRINTF(ALWAYS, "prepare to create appsink.");
+    user_data->appsink = gst_element_factory_make("appsink", "video_show");
+    if (!gst_bin_add ((GstBin *) user_data->pipeline, user_data->appsink)) {
         LOG_PRINTF(ERROR, "could not add sink to pipeline.");
         return;
     }
 
-    if (gst_element_link_filtered (convert, sinkplug, filter_rgba_caps) != TRUE) {
+    if (gst_element_link_filtered (convert, user_data->appsink, filter_rgba_caps) != TRUE) {
         LOG_PRINTF(ERROR, "could not link convert ==>> RGBA ==>> sink.");
         return;
     }
+    // g_object_set(G_OBJECT(sinkplug), "max-buffers", 1, NULL);
+    // g_object_set(G_OBJECT(user_data->appsink), "emit-signals", TRUE, NULL);
+    // g_signal_connect (G_OBJECT(user_data->appsink), "new-sample", G_CALLBACK (new_sample), user_data);
 
-    //set location
-    g_object_set(G_OBJECT(sinkplug), "location", "dump.rgba", NULL);
-
-    //add prob
-    GstPad* sinkplug_sinkpad = gst_element_get_static_pad (sinkplug, "sink");
-    gst_pad_add_probe (sinkplug_sinkpad, GST_PAD_PROBE_TYPE_BUFFER, (GstPadProbeCallback) cb_have_data, user_data, NULL);
-    gst_object_unref (sinkplug_sinkpad);
+    // //add prob
+    // GstPad* sinkplug_sinkpad = gst_element_get_static_pad (user_data->appsink, "sink");
+    // gst_pad_add_probe (sinkplug_sinkpad, GST_PAD_PROBE_TYPE_BUFFER, (GstPadProbeCallback) cb_have_data, user_data, NULL);
+    // gst_object_unref (sinkplug_sinkpad);
     //change state
-    gst_element_sync_state_with_parent(sinkplug);
+    gst_element_sync_state_with_parent(user_data->appsink);
 }
 
 /**
@@ -579,5 +586,18 @@ GstPadProbeReturn cb_have_data ( GstPad * pad, GstPadProbeInfo * info, gpointer 
     handle->isGot = TRUE;
 
 
+    return GST_PAD_PROBE_OK;
+}
+
+/**
+ * @brief: appsink new-sample signal
+ * @param[in] object: element obj
+ * @param[in] user_data: user data
+ * 
+ * @return: --
+ */
+GstFlowReturn new_sample (GstElement* object, gpointer user_data)
+{
+    LOG_PRINTF(ALWAYS, "rev new-sample from %s.", GST_ELEMENT_NAME (object));
     return GST_PAD_PROBE_OK;
 }
